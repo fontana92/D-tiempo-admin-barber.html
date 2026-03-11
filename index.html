@@ -25,54 +25,75 @@
     </div>
 
     <script>
-        const SUPABASE_URL = "https://rbxfnjvavvlttqansdvh.supabase.co";
-        const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJieGZuanZhdnZsdHRxYW5zZHZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNDE2NTMsImV4cCI6MjA4ODgxNzY1M30.a-XFDFCPu3vpQGx_xfIHYdurNPJNVkNZylrzaIcHv84";
-        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    // 1. Configuración (Usa los mismos datos que en el cliente)
+    const SUPABASE_URL = "https://rbxfnjvavvlttqansdvh.supabase.co";
+    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJieGZuanZhdnZsdHRxYW5zZHZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNDE2NTMsImV4cCI6MjA4ODgxNzY1M30.a-XFDFCPu3vpQGx_xfIHYdurNPJNVkNZylrzaIcHv84"; // PEGÁ TU KEY COMPLETA
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        async function loadQueue() {
-            const { data } = await supabase
-                .from('fila_virtual')
-                .select('*')
-                .eq('estado', 'esperando')
-                .order('created_at', { ascending: true });
+    // 2. Función para cargar la lista de gente esperando
+    async function loadQueue() {
+        console.log("Cargando lista de clientes...");
+        
+        const { data, error } = await supabaseClient
+            .from('fila_virtual')
+            .select('*')
+            .eq('estado', 'esperando') // Solo los que están en la fila
+            .order('created_at', { ascending: true });
 
-            const listDiv = document.getElementById('list');
-            if(data.length === 0) {
-                listDiv.innerHTML = '<p class="empty">No hay nadie en la fila.</p>';
-                return;
-            }
+        if (error) {
+            console.error("Error al cargar lista:", error.message);
+            return;
+        }
 
-            listDiv.innerHTML = data.map((cliente, index) => `
-                <div class="client-card">
-                    <div class="client-info">
-                        <h3>${cliente.nombre_cliente}</h3>
-                        <p>Llegó hace: ${Math.floor((new Date() - new Date(cliente.created_at))/60000)} min</p>
-                    </div>
-                    <button onclick="atender('${cliente.id}')">
-                        ${index === 0 ? '🔔 LLAMAR AHORA' : 'ATENDER'}
-                    </button>
+        const listDiv = document.getElementById('list');
+        
+        if (!data || data.length === 0) {
+            listDiv.innerHTML = '<p class="empty">No hay nadie en la fila por ahora.</p>';
+            return;
+        }
+
+        // Renderizar la lista
+        listDiv.innerHTML = data.map((cliente, index) => `
+            <div class="client-card">
+                <div class="client-info">
+                    <h3>${cliente.nombre_cliente}</h3>
+                    <p>Posición: #${index + 1} | ID: ${cliente.id}</p>
                 </div>
-            `).join('');
+                <button onclick="atenderCliente('${cliente.id}', '${cliente.nombre_cliente}')">
+                    ${index === 0 ? '🔔 LLAMAR SIGUIENTE' : 'LLAMAR'}
+                </button>
+            </div>
+        `).join('');
+    }
+
+    // 3. Función para llamar/atender al cliente (lo saca de la fila)
+    async function atenderCliente(id, nombre) {
+        console.log("Atendiendo a:", nombre);
+        
+        const { error } = await supabaseClient
+            .from('fila_virtual')
+            .update({ estado: 'atendido' }) // Cambiamos el estado
+            .eq('id', id);
+
+        if (error) {
+            alert("Error al atender: " + error.message);
+        } else {
+            console.log(nombre + " atendido con éxito.");
+            // No hace falta recargar, el tiempo real lo hará solo
         }
+    }
 
-        async function atender(id) {
-            await supabase
-                .from('fila_virtual')
-                .update({ estado: 'atendido' })
-                .eq('id', id);
-            
-            // La lista se actualizará sola por el Realtime
-        }
+    // 4. TIEMPO REAL: Escuchar cuando alguien se anota o cuando alguien sale
+    supabaseClient
+        .channel('admin_realtime')
+        .on('postgres_changes', { event: '*', table: 'fila_virtual' }, (payload) => {
+            console.log("Cambio detectado en la base de datos, actualizando lista...");
+            loadQueue();
+        })
+        .subscribe();
 
-        // TIEMPO REAL: Si alguien se anota desde el celu, el barbero lo ve al instante
-        supabase
-            .channel('cambios_admin')
-            .on('postgres_changes', { event: '*', table: 'fila_virtual' }, () => {
-                loadQueue();
-            })
-            .subscribe();
-
-        loadQueue();
-    </script>
+    // Carga inicial
+    loadQueue();
+</script>
 </body>
 </html>
